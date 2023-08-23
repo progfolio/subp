@@ -47,8 +47,8 @@
 PROGRAM is a string or a list of form (PROGRAM ARGS...).
 If PROGRAM contains spaces, it will be split on spaces to supply program args.
 OPTIONS is a may be any of the key value pairs:
-  - stdout-type: `buffer` to return a buffer, other values return a string.
-  - stderr-type: same as above.
+  - stdout: `buffer` to return a buffer, other values return a string.
+  - stderr: same as above.
   - stdin: File path for program input.
 Return a list of form: (EXITCODE STDOUT STDERR)."
   (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
@@ -61,13 +61,13 @@ Return a list of form: (EXITCODE STDOUT STDERR)."
       (list (apply #'call-process program (plist-get options :stdin)
                    (list t subp--stderr) nil args)
             (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
-                  ((eq (plist-get options :stdout-type) 'buffer) (current-buffer))
+                  ((eq (plist-get options :stdout) 'buffer) (current-buffer))
                   (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
                        (kill-buffer))))
             (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
               (with-current-buffer (generate-new-buffer " subp-stderr")
                 (insert-file-contents subp--stderr)
-                (if (eq (plist-get options :stderr-type) 'buffer)
+                (if (eq (plist-get options :stderr) 'buffer)
                     (current-buffer)
                   (prog1 (buffer-substring-no-properties (point-min) (point-max))
                     (kill-buffer)))))))))
