@@ -42,6 +42,14 @@
 ;;@TODO: gate behind user option
 (add-hook 'kill-emacs-hook #'subp--delete-stderr-file)
 
+(defvar subp-stdout-type nil
+  "Return type of `subp-call' STDOUT stream. Defaults to string.
+May also be `buffer`.")
+
+(defvar subp-stderr-type nil
+  "Return type of `subp-call' STDERR stream. Defaults to string.
+May also be `buffer`.")
+
 (defun subp-call (program &rest args)
   "Run PROGRAM synchronously with ARGS.
 Return a list of form: (EXITCODE STDOUT STDERR)."
@@ -51,16 +59,24 @@ Return a list of form: (EXITCODE STDOUT STDERR)."
              (tokens))
     (setq args (append tokens args)))
   (when (string-match-p "/" program) (setq program (expand-file-name program)))
-  (with-temp-buffer
+  (with-current-buffer (generate-new-buffer " subp-stderr")
     (list (apply #'call-process program nil (list t subp--stderr)
                  nil args)
           (when-let ((s (buffer-substring-no-properties (point-min) (point-max)))
                      ((not (= (length s) 0))))
-            s)
-          (when-let (((insert-file-contents subp--stderr nil nil nil t))
-                     (s (buffer-substring-no-properties (point-min) (point-max)))
-                     ((not (= (length s) 0))))
-            s))))
+            (if (not (eq subp-stdout-type 'buffer))
+                s
+              (let ((stdout (generate-new-buffer " subp-stdout")))
+                (copy-to-buffer stdout (point-min) (point-max))
+                stdout)))
+          (if-let (((insert-file-contents subp--stderr nil nil nil t))
+                   (s (buffer-substring-no-properties (point-min) (point-max)))
+                   ((not (= (length s) 0))))
+              (if (eq subp-stderr-type 'buffer)
+                  (current-buffer)
+                (kill-buffer (current-buffer))
+                s)
+            (ignore (kill-buffer (current-buffer)))))))
 
 (defmacro subp-with (result &rest body)
   "Provide anaphoric RESULT bindings for duration of BODY.
