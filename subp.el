@@ -45,6 +45,11 @@
 (defun subp-call (program &rest args)
   "Run PROGRAM synchronously with ARGS.
 Return a list of form: (EXITCODE STDOUT STDERR)."
+  (when-let (((string-match-p " " program))
+             (tokens (split-string program " " 'omit-nulls))
+             ((setq program (pop tokens)))
+             (tokens))
+    (setq args (append tokens args)))
   (when (string-match-p "/" program) (setq program (expand-file-name program)))
   (with-temp-buffer
     (list (apply #'call-process program nil (list t subp--stderr)
