@@ -42,36 +42,33 @@
 ;;@TODO: gate behind user option
 (add-hook 'kill-emacs-hook #'subp--delete-stderr-file)
 
-(defvar subp-stdout-type nil
-  "Return type of `subp-call' STDOUT stream. Defaults to string.
-May also be `buffer`.")
-
-(defvar subp-stderr-type nil
-  "Return type of `subp-call' STDERR stream. Defaults to string.
-May also be `buffer`.")
-
-(defun subp-call (program &rest args)
-  "Run PROGRAM synchronously with ARGS.
+(defun subp-call (program &rest options)
+  "Run PROGRAM synchronously with OPTIONS.
+PROGRAM is a string or a list of form (PROGRAM ARGS...).
+If PROGRAM contains spaces, it will be split on spaces to supply program args.
+OPTIONS is a may be any of the key value pairs:
+  - stdout-type: `buffer` to return a buffer, other values return a string.
+  - stderr-type: same as above.
+  - stdin: File path for program input.
 Return a list of form: (EXITCODE STDOUT STDERR)."
-  (when-let (((string-match-p " " program))
-             (tokens (split-string program " " 'omit-nulls))
-             ((setq program (pop tokens)))
-             (tokens))
-    (setq args (append tokens args)))
-  (when (string-match-p "/" program) (setq program (expand-file-name program)))
-  (with-current-buffer (generate-new-buffer " subp-stdout")
-    (list (apply #'call-process program nil (list t subp--stderr) nil args)
-          (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
-                ((eq subp-stdout-type 'buffer) (current-buffer))
-                (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                     (kill-buffer))))
-          (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
-            (with-current-buffer (generate-new-buffer " subp-stderr")
-              (insert-file-contents subp--stderr)
-              (if (eq subp-stderr-type 'buffer)
-                  (current-buffer)
-                (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                  (kill-buffer))))))))
+  (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
+  (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
+    (setq program (pop args))
+    (when (string-match-p "/" program) (setq program (expand-file-name program)))
+    (with-current-buffer (generate-new-buffer " subp-stdout")
+      (list (apply #'call-process program (plist-get options :stdin)
+                   (list t subp--stderr) nil args)
+            (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
+                  ((eq (plist-get options :stdout-type) 'buffer) (current-buffer))
+                  (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
+                       (kill-buffer))))
+            (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
+              (with-current-buffer (generate-new-buffer " subp-stderr")
+                (insert-file-contents subp--stderr)
+                (if (eq (plist-get options :stderr-type) 'buffer)
+                    (current-buffer)
+                  (prog1 (buffer-substring-no-properties (point-min) (point-max))
+                    (kill-buffer)))))))))
 
 (defmacro subp-with (result &rest body)
   "Provide anaphoric RESULT bindings for duration of BODY.
