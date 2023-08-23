@@ -52,6 +52,8 @@ OPTIONS is a may be any of the key value pairs:
   - stdin: File path for program input.
 Return a list of form: (EXITCODE STDOUT STDERR)."
   (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
+  (when options (unless (keywordp (car options))
+                  (signal 'wrong-type-argument (list (car options) 'keywordp))))
   (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
     (setq program (pop args))
     (when (string-match-p "/" program) (setq program (expand-file-name program)))
