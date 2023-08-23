@@ -42,7 +42,7 @@
 ;;@TODO: gate behind user option
 (add-hook 'kill-emacs-hook #'subp--delete-stderr-file)
 
-(defun subp-call (program &rest options)
+(defun subp (program &rest options)
   "Run PROGRAM synchronously with OPTIONS.
 PROGRAM is a string or a list of form (PROGRAM ARGS...).
 If PROGRAM contains spaces, it will be split on spaces to supply program args.
@@ -70,7 +70,7 @@ Return a list of form: (EXITCODE STDOUT STDERR)."
                   (prog1 (buffer-substring-no-properties (point-min) (point-max))
                     (kill-buffer)))))))))
 
-(defmacro subp-with (result &rest body)
+(defmacro subp-with-result (result &rest body)
   "Provide anaphoric RESULT bindings for duration of BODY.
 RESULT must be an expression which evaluates to a list of form:
   (EXITCODE STDOUT STDERR)
@@ -92,22 +92,22 @@ Anaphoric bindings provided:
      (ignore result exit success failure stdout stderr)
      ,@body))
 
-(defmacro subp-with-call (args &rest body)
-  "Execute BODY in `subp-with-process', applying `subp-process-call' to ARGS."
+(defmacro subp-with (args &rest body)
+  "Execute BODY in `subp-with-result' of calling `subp' with ARGS."
   (declare (indent 1) (debug t))
-  `(subp-with (subp-call ,@(if (listp args) args (list args))) ,@body))
+  `(subp-with-result (subp ,@(if (listp args) args (list args))) ,@body))
 
 (defun subp-output (program &rest args)
   "Return output of running PROGRAM with ARGS.
 Signal an error if the command returns a nonzero exit code."
-  (subp-with (apply #'subp-call program args)
+  (subp-with-result (apply #'subp program args)
     (if success (concat stdout stderr) ; Programs may exit normally and print to stderr
       (error "%s exited with code %s: %s" program (car result) stderr))))
 
 (defmacro subp-cond (args &rest conditions)
-  "Eval CONDITIONS in context of `subp-with-call' with ARGS."
+  "Eval CONDITIONS in context of `subp-with' with ARGS."
   (declare (indent 1) (debug t))
-  `(subp-with-call ,args (cond ,@conditions)))
+  `(subp-with ,args (cond ,@conditions)))
 
 (provide 'subp)
 ;;; subp.el ends here
