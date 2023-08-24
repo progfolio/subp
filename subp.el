@@ -42,6 +42,10 @@
 ;;@TODO: gate behind user option
 (add-hook 'kill-emacs-hook #'subp--delete-stderr-file)
 
+(defsubst subp-resignal (error)
+  "Resignal ERROR object."
+  (signal (car error) (cdr error)))
+
 (defun subp (program &rest options)
   "Run PROGRAM synchronously with OPTIONS.
 PROGRAM is a string or a list of form (PROGRAM ARGS...).
@@ -50,7 +54,7 @@ OPTIONS is a may be any of the key value pairs:
   - stdout: `buffer` to return a buffer, other values return a string.
   - stderr: same as above.
   - stdin: File path for program input.
-  - lisp-error: If non-nil, signal lisp errors, else return lisp error object.
+  - lisp-error: If non-nil, signal Lisp errors, else return Lisp error object.
 Return a list of form: (EXITCODE STDOUT STDERR)."
   (condition-case err
       (progn
@@ -83,10 +87,10 @@ RESULT must be an expression which evaluates to a list of form:
 Anaphoric bindings provided:
   result: the raw process result list
   exit: the exit code of the process
-  invoked: t if process was invoked without a lisp error
+  invoked: t if process was invoked without a Lisp error
   success: t if process exited with exit code 0
   failure: t if process did not invoke or exited with a nonzero code
-  err: lisp error object
+  err: Lisp error object
   stdout: output of stdout
   stderr: output of stderr"
   (declare (indent 1) (debug t))
@@ -99,7 +103,7 @@ Anaphoric bindings provided:
           (stdout  (and invoked (nth 1 result)))
           (stderr  (and invoked (nth 2 result))))
      ;; Prevent byte-compiler warnings.
-     (ignore result exit invoked success failure stdout stderr)
+     (ignore result exit invoked success failure err stdout stderr)
      ,@body))
 
 (defmacro subp-with (args &rest body)
