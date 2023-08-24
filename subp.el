@@ -50,27 +50,31 @@ OPTIONS is a may be any of the key value pairs:
   - stdout: `buffer` to return a buffer, other values return a string.
   - stderr: same as above.
   - stdin: File path for program input.
+  - lisp-error: If non-nil, signal lisp errors, else return lisp error object.
 Return a list of form: (EXITCODE STDOUT STDERR)."
-  (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
-  (when options (unless (keywordp (car options))
-                  (signal 'wrong-type-argument (list (car options) 'keywordp))))
-  (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
-    (setq program (pop args))
-    (when (string-match-p "/" program) (setq program (expand-file-name program)))
-    (with-current-buffer (generate-new-buffer " subp-stdout")
-      (list (apply #'call-process program (plist-get options :stdin)
-                   (list t subp--stderr) nil args)
-            (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
-                  ((eq (plist-get options :stdout) 'buffer) (current-buffer))
-                  (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                       (kill-buffer))))
-            (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
-              (with-current-buffer (generate-new-buffer " subp-stderr")
-                (insert-file-contents subp--stderr)
-                (if (eq (plist-get options :stderr) 'buffer)
-                    (current-buffer)
-                  (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                    (kill-buffer)))))))))
+  (condition-case err
+      (progn
+        (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
+        (when options (unless (keywordp (car options))
+                        (signal 'wrong-type-argument (list (car options) 'keywordp))))
+        (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
+          (setq program (pop args))
+          (when (string-match-p "/" program) (setq program (expand-file-name program)))
+          (with-current-buffer (generate-new-buffer " subp-stdout")
+            (list (apply #'call-process program (plist-get options :stdin)
+                         (list t subp--stderr) nil args)
+                  (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
+                        ((eq (plist-get options :stdout) 'buffer) (current-buffer))
+                        (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
+                             (kill-buffer))))
+                  (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
+                    (with-current-buffer (generate-new-buffer " subp-stderr")
+                      (insert-file-contents subp--stderr)
+                      (if (eq (plist-get options :stderr) 'buffer)
+                          (current-buffer)
+                        (prog1 (buffer-substring-no-properties (point-min) (point-max))
+                          (kill-buffer)))))))))
+    (error (if (plist-get options :lisp-error) (signal (car err) (cdr err)) err))))
 
 (defmacro subp-with-result (result &rest body)
   "Provide anaphoric RESULT bindings for duration of BODY.
@@ -79,19 +83,23 @@ RESULT must be an expression which evaluates to a list of form:
 Anaphoric bindings provided:
   result: the raw process result list
   exit: the exit code of the process
+  invoked: t if process was invoked without a lisp error
   success: t if process exited with exit code 0
   failure: t if process did not invoke or exited with a nonzero code
+  err: lisp error object
   stdout: output of stdout
   stderr: output of stderr"
   (declare (indent 1) (debug t))
   `(let* ((result ,result)
           (exit    (car result))
-          (success (zerop exit))
+          (invoked (numberp exit))
+          (success (and invoked (zerop exit)))
           (failure (not success))
-          (stdout  (nth 1 result))
-          (stderr  (nth 2 result)))
+          (err     (and (not invoked) result))
+          (stdout  (and invoked (nth 1 result)))
+          (stderr  (and invoked (nth 2 result))))
      ;; Prevent byte-compiler warnings.
-     (ignore result exit success failure stdout stderr)
+     (ignore result exit invoked success failure stdout stderr)
      ,@body))
 
 (defmacro subp-with (args &rest body)
