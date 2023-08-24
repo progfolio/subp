@@ -1,0 +1,162 @@
+#+title: subp.el: elisp sub-process library
+#+author: Nicholas Vollmer
+#+options: exports:both timestamp:nil title:t toc:nil
+
+* Preamble                                                         :noexport:
+This file generates the README.md file.
+To export:
+
+#+begin_src emacs-lisp :lexical t :results silent
+(require 'ox-gfm)
+(defun +subp-export-readme ()
+  (with-current-buffer (find-file-noselect "./readme.org")
+    (org-export-to-file 'gfm "../README.md")))
+
+(add-hook 'after-save-hook #'+subp-export-readme nil t)
+#+end_src
+
+* subp.el: elisp sub-process library
+
+* Installation
+:PROPERTIES:
+:CUSTOM_ID: installation
+:END:
+#+begin_src emacs-lisp :lexical t
+(elpaca (subp :host github :repo "progfolio/subp"))
+#+end_src
+
+* Examples
+:PROPERTIES:
+:CUSTOM_ID: examples
+:END:
+#+begin_src emacs-lisp :lexical t :exports none :results raw
+(require 'subp)
+(save-excursion ;;@HACK org-babel can't replace raw results otherwise?
+  (save-restriction
+    (org-narrow-to-subtree)
+    (when (zerop (org-next-visible-heading 1))
+      (delete-region (point) (point-max))))
+
+  (cl-flet ((docs (symbol)
+              (with-temp-buffer
+                (let ((standard-output (current-buffer)))
+                  (describe-function-1 symbol)
+                  (goto-char (point-min))
+                  (re-search-forward "\n\n")
+                  (cons (symbol-name symbol)
+                        (cl-remove-if
+                         (lambda (s) (string-match-p "Inferred type" s))
+                         (split-string (buffer-substring-no-properties (point) (point-max))
+                                       "\n" 'omit-nulls))))))
+            (markup-parameters (s) (let (case-fold-search) (replace-regexp-in-string "\\([[:upper:]]\\{2,\\}\\)" "=\\1=" s))))
+            (with-temp-buffer
+              (emacs-lisp-mode)
+              (cl-loop
+               with examples = '((subp ("date") ("date -R") ("date -x"))
+                                 ;;(subp-output ("date") ("date -R") ("date -x"))
+                                 (subp-with ("date" stdout) ("date -R" exit) ("date -x" stderr))
+                                 (subp-cond ("date" (success stdout) (failure stderr))
+                                   ("date -x" (success stdout) (failure stderr))))
+               for (name arglist . doc) in (mapcar #'docs (mapcar #'car examples))
+               for doc = (mapconcat #'markup-parameters doc "\n")
+               for sym = (intern name)
+               for exs = (cl-loop for args in (alist-get sym examples)
+                                  for form = `(,sym ,@args)
+                                  for result = (progn (erase-buffer)
+                                                      (insert (format "%S" (condition-case err (eval form t) (error err))))
+                                                      (comment-region (point-min) (point-max))
+                                                      (buffer-string))
+                                  concat (format "#+begin_src emacs-lisp\n%S\n\n%s\n\n#+end_src\n\n"
+                                                 form result))
+               concat (concat (format "** %s\n=%s=\n\n%s\n\n" name arglist doc) exs)))))
+#+end_src
+
+#+RESULTS:
+** subp
+=(subp PROGRAM &rest OPTIONS)=
+
+Run =PROGRAM= synchronously with =OPTIONS=.
+=PROGRAM= is a string or a list of form (=PROGRAM= =ARGS=...).
+If =PROGRAM= contains spaces, it will be split on spaces to supply program args.
+=OPTIONS= is a may be any of the key value pairs:
+  - stdout: `buffer` to return a buffer, other values return a string.
+  - stderr: same as above.
+  - stdin: File path for program input.
+Return a list of form: (=EXITCODE= =STDOUT= =STDERR=).
+
+#+begin_src emacs-lisp
+(subp "date")
+
+;; (0 "Wed Aug 23 09:24:43 PM EDT 2023
+;; " nil)
+
+#+end_src
+
+#+begin_src emacs-lisp
+(subp "date -R")
+
+;; (0 "Wed, 23 Aug 2023 21:24:43 -0400
+;; " nil)
+
+#+end_src
+
+#+begin_src emacs-lisp
+(subp "date -x")
+
+;; (1 nil "/usr/bin/date: invalid option -- 'x'
+;; Try '/usr/bin/date --help' for more information.
+;; ")
+
+#+end_src
+
+** subp-with
+=(subp-with ARGS &rest BODY)=
+
+Execute =BODY= in `subp-with-result' of calling `subp' with =ARGS=.
+
+#+begin_src emacs-lisp
+(subp-with "date" stdout)
+
+;; "Wed Aug 23 09:24:43 PM EDT 2023
+;; "
+
+#+end_src
+
+#+begin_src emacs-lisp
+(subp-with "date -R" exit)
+
+;; 0
+
+#+end_src
+
+#+begin_src emacs-lisp
+(subp-with "date -x" stderr)
+
+;; "/usr/bin/date: invalid option -- 'x'
+;; Try '/usr/bin/date --help' for more information.
+;; "
+
+#+end_src
+
+** subp-cond
+=(subp-cond ARGS &rest CONDITIONS)=
+
+Eval =CONDITIONS= in context of `subp-with' with =ARGS=.
+
+#+begin_src emacs-lisp
+(subp-cond "date" (success stdout) (failure stderr))
+
+;; "Wed Aug 23 09:24:43 PM EDT 2023
+;; "
+
+#+end_src
+
+#+begin_src emacs-lisp
+(subp-cond "date -x" (success stdout) (failure stderr))
+
+;; "/usr/bin/date: invalid option -- 'x'
+;; Try '/usr/bin/date --help' for more information.
+;; "
+
+#+end_src
+
