@@ -23,12 +23,13 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;;; @TODO Multiple async subps management: race, sequence
+;;; @TODO sequences of async subps
 
 ;;
 
 ;;; Code:
 (eval-when-compile (require 'subr-x))
+(require 'cl-lib) ;;@MAYBE: implement without using `cl-loop'
 
 (defconst subp--stderr
   (expand-file-name (format "subp-stderr-%s" (emacs-pid)) temporary-file-directory)
@@ -85,12 +86,41 @@
                               (when timer (cancel-timer timer))
                               (when stdout-buffer-p (setq stdout (process-buffer process)))
                               (when callback
-                                (funcall callback (if latep (list 'timeout nil nil)
-                                                    ;;@TODO: :stderr 'buffer
-                                                    (list (process-exit-status process) stdout stderr)))))))
+                                (apply callback (if latep (list 'timeout nil nil)
+                                                  ;;@TODO: :stderr 'buffer
+                                                  (list (process-exit-status process) stdout stderr))
+                                       (plist-get options :cb-args))))))
     (set-process-filter errproc (lambda (_ output) (setq stderr (concat stderr output))))
     (when timer (timer-set-time timer (time-add nil deadline)))
     process))
+
+(defun subp-all (callback programs &rest options)
+  "Eval CALLBACK with result of PROGRAMS.
+OPTIONS @TODO: accept options."
+  (ignore options)
+  (cl-loop
+   with required with optional
+   with progcount = (length programs)
+   with optcount = (cl-count-if
+                    (lambda (program) (plist-get (cdr-safe program) :optional))
+                    programs)
+   with limit = (max (- progcount optcount) 1)
+   with firstp = (= optcount progcount)
+   for program in programs
+   for i below progcount
+   collect
+   (apply #'subp-async (if (consp program) (car program) program)
+          ;;@TODO: kill optional processes when limit reached
+          (lambda (result id self)
+            (push (cons id result)
+                  (if (plist-get (cdr-safe self) :optional) optional required))
+            (when (or (eq (length required) limit)
+                      (and firstp (eq (length optional) limit)))
+              (funcall callback
+                       (mapcar #'cdr (cl-sort (append required optional) #'< :key #'car)))
+              (setq limit -1 firstp nil)))
+          (append (when (consp (car-safe program)) (cdr program))
+                  (list :cb-args (list i program))))))
 
 (defun subp (program &rest options)
   "Run PROGRAM synchronously with OPTIONS.
