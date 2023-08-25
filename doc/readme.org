@@ -49,25 +49,27 @@ To export:
                          (split-string (buffer-substring-no-properties (point) (point-max))
                                        "\n" 'omit-nulls))))))
             (markup-parameters (s) (let (case-fold-search) (replace-regexp-in-string "\\([[:upper:]]\\{2,\\}\\)" "=\\1=" s))))
-            (with-temp-buffer
-              (emacs-lisp-mode)
-              (cl-loop
-               with examples = '((subp ("date") ("date -R") ("date -x"))
-                                 (subp-with ("date" stdout) ("date -R" exit) ("date -x" stderr))
-                                 (subp-cond ("date" (success stdout) (failure stderr))
-                                   ("date -x" (success stdout) (failure stderr))))
-               for (name arglist . doc) in (mapcar #'docs (mapcar #'car examples))
-               for doc = (mapconcat #'markup-parameters doc "\n")
-               for sym = (intern name)
-               for exs = (cl-loop for args in (alist-get sym examples)
-                                  for form = `(,sym ,@args)
-                                  for result = (progn (erase-buffer)
-                                                      (insert (format "%S" (condition-case err (eval form t) (error err))))
-                                                      (comment-region (point-min) (point-max))
-                                                      (buffer-string))
-                                  concat (format "#+begin_src emacs-lisp\n%S\n\n%s\n\n#+end_src\n\n"
-                                                 form result))
-               concat (concat (format "** %s\n=%s=\n\n%s\n\n" name arglist doc) exs)))))
+    (with-temp-buffer
+      (emacs-lisp-mode)
+      (cl-loop
+       with examples = '((subp ("date") ("date -R") ("date -x")
+                               ('("bash" "-c" "sleep 2; date"))
+                               ('("bash" "-c" "sleep 2; date") :callback #'identity))
+                         (subp-with ("date" stdout) ("date -R" exit) ("date -x" stderr))
+                         (subp-cond ("date" (success stdout) (failure stderr))
+                           ("date -x" (success stdout) (failure stderr))))
+       for (name arglist . doc) in (mapcar #'docs (mapcar #'car examples))
+       for doc = (mapconcat #'markup-parameters doc "\n")
+       for sym = (intern name)
+       for exs = (cl-loop for args in (alist-get sym examples)
+                          for form = `(,sym ,@args)
+                          for result = (progn (erase-buffer)
+                                              (insert (format "%S" (condition-case err (eval form t) (error err))))
+                                              (comment-region (point-min) (point-max))
+                                              (buffer-string))
+                          concat (format "#+begin_src emacs-lisp\n%S\n\n%s\n\n#+end_src\n\n"
+                                         form result))
+       concat (concat (format "** %s\n=%s=\n\n%s\n\n" name arglist doc) exs)))))
 #+end_src
 
 #+RESULTS:
@@ -81,12 +83,13 @@ If =PROGRAM= contains spaces, it will be split on spaces to supply program args.
   - stdout: `buffer` to return a buffer, other values return a string.
   - stderr: same as above.
   - stdin: File path for program input.
+  - lisp-error: If non-nil, signal Lisp errors, else return Lisp error object.
 Return a list of form: (=EXITCODE= =STDOUT= =STDERR=).
 
 #+begin_src emacs-lisp
 (subp "date")
 
-;; (0 "Wed Aug 23 09:24:43 PM EDT 2023
+;; (0 "Fri Aug 25 09:32:07 AM EDT 2023
 ;; " nil)
 
 #+end_src
@@ -94,7 +97,7 @@ Return a list of form: (=EXITCODE= =STDOUT= =STDERR=).
 #+begin_src emacs-lisp
 (subp "date -R")
 
-;; (0 "Wed, 23 Aug 2023 21:24:43 -0400
+;; (0 "Fri, 25 Aug 2023 09:32:07 -0400
 ;; " nil)
 
 #+end_src
@@ -108,6 +111,21 @@ Return a list of form: (=EXITCODE= =STDOUT= =STDERR=).
 
 #+end_src
 
+#+begin_src emacs-lisp
+(subp '("bash" "-c" "sleep 2; date"))
+
+;; (0 "Fri Aug 25 09:32:09 AM EDT 2023
+;; " nil)
+
+#+end_src
+
+#+begin_src emacs-lisp
+(subp '("bash" "-c" "sleep 2; date") :callback #'identity)
+
+;; #<process subp>
+
+#+end_src
+
 ** subp-with
 =(subp-with ARGS &rest BODY)=
 
@@ -116,7 +134,7 @@ Execute =BODY= in `subp-with-result' of calling `subp' with =ARGS=.
 #+begin_src emacs-lisp
 (subp-with "date" stdout)
 
-;; "Wed Aug 23 09:24:43 PM EDT 2023
+;; "Fri Aug 25 09:32:09 AM EDT 2023
 ;; "
 
 #+end_src
@@ -145,7 +163,7 @@ Eval =CONDITIONS= in context of `subp-with' with =ARGS=.
 #+begin_src emacs-lisp
 (subp-cond "date" (success stdout) (failure stderr))
 
-;; "Wed Aug 23 09:24:43 PM EDT 2023
+;; "Fri Aug 25 09:32:09 AM EDT 2023
 ;; "
 
 #+end_src

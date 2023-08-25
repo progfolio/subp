@@ -23,7 +23,7 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;;; @TODO: async sub-processes?
+;;; @TODO Multiple async subps management: race, sequence
 
 ;;
 
@@ -107,23 +107,27 @@ Return a list of form: (EXITCODE STDOUT STDERR)."
         (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
         (when options (unless (keywordp (car options))
                         (signal 'wrong-type-argument (list (car options) 'keywordp))))
-        (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
-          (setq program (pop args))
-          (when (string-match-p "/" program) (setq program (expand-file-name program)))
-          (with-current-buffer (generate-new-buffer " subp-stdout")
-            (list (apply #'call-process program (plist-get options :stdin)
-                         (list t subp--stderr) nil args)
-                  (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
-                        ((eq (plist-get options :stdout) 'buffer) (current-buffer))
-                        (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                             (kill-buffer))))
-                  (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
-                    (with-current-buffer (generate-new-buffer " subp-stderr")
-                      (insert-file-contents subp--stderr)
-                      (if (eq (plist-get options :stderr) 'buffer)
-                          (current-buffer)
-                        (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                          (kill-buffer)))))))))
+        (let ((callback (plist-get options :callback)))
+          (if (or callback (plist-get options :async))
+              ;;@TODO: lisp-error treatment when async?
+              (apply #'subp-async program callback options)
+            (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
+              (setq program (pop args))
+              (when (string-match-p "/" program) (setq program (expand-file-name program)))
+              (with-current-buffer (generate-new-buffer " subp-stdout")
+                (list (apply #'call-process program (plist-get options :stdin)
+                             (list t subp--stderr) nil args)
+                      (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
+                            ((eq (plist-get options :stdout) 'buffer) (current-buffer))
+                            (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
+                                 (kill-buffer))))
+                      (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
+                        (with-current-buffer (generate-new-buffer " subp-stderr")
+                          (insert-file-contents subp--stderr)
+                          (if (eq (plist-get options :stderr) 'buffer)
+                              (current-buffer)
+                            (prog1 (buffer-substring-no-properties (point-min) (point-max))
+                              (kill-buffer)))))))))))
     (error (if (plist-get options :lisp-error) (signal (car err) (cdr err)) err))))
 
 (defmacro subp-with-result (result &rest body)
@@ -142,20 +146,28 @@ Anaphoric bindings provided:
   (declare (indent 1) (debug t))
   `(let* ((result ,result)
           (exit    (car result))
-          (invoked (numberp exit))
-          (success (and invoked (zerop exit)))
+          (timeout (eq exit 'timeout))
+          (invoked (or timeout (numberp exit)))
+          (success (and (not timeout) invoked (zerop exit)))
           (failure (not success))
           (err     (and (not invoked) result))
           (stdout  (and invoked (nth 1 result)))
           (stderr  (and invoked (nth 2 result))))
      ;; Prevent byte-compiler warnings.
-     (ignore result exit invoked success failure err stdout stderr)
+     (ignore result exit invoked timeout success failure err stdout stderr)
      ,@body))
 
 (defmacro subp-with (args &rest body)
   "Execute BODY in `subp-with-result' of calling `subp' with ARGS."
   (declare (indent 1) (debug t))
-  `(subp-with-result (subp ,@(if (listp args) args (list args))) ,@body))
+  (let* ((args (if (consp args) args (list args)))
+         (options (cdr-safe args))
+         (callback (plist-get options :callback)))
+    (when callback (warn "subp :callback replaced by macro BODY: %S" callback))
+    (if (or (plist-get options :async) callback)
+        `(subp-async ,(car args) (lambda (result) (subp-with-result result ,@body))
+                     ,@options)
+      `(subp-with-result (subp ,@args ,@options) ,@body))))
 
 (defmacro subp-cond (args &rest conditions)
   "Eval CONDITIONS in context of `subp-with' with ARGS."
