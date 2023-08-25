@@ -61,7 +61,7 @@
          (latep nil)
          (process
           (make-process
-           :name "subp"
+           :name (subp--declared-option :name options "subp")
            :buffer (when stdout-buffer-p (generate-new-buffer " subp-stdout"))
            :command (if (consp program) program (string-split program " " 'omit-nulls))
            :noquery (subp--declared-option :noquery options t)
