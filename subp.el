@@ -46,6 +46,52 @@
   "Resignal ERROR object."
   (signal (car error) (cdr error)))
 
+(defsubst subp--declared-option (option options &optional default)
+  "Return declared OPTION from OPTIONS or DEFAULT."
+  (if-let ((declared (plist-get option options)))
+      (cadr declared)
+    default))
+
+(defun subp-async (program callback &rest options)
+  "Eval CALLBACK  with results of async PROGRAM with OPTIONS."
+  (let* ((errbuff (generate-new-buffer " subp-stderr"))
+         (stdout-buffer-p (eq (plist-get options :stdout) 'buffer))
+         (stdout nil)
+         (stderr nil)
+         (latep nil)
+         (process
+          (make-process
+           :name "subp"
+           :buffer (when stdout-buffer-p (generate-new-buffer " subp-stdout"))
+           :command (if (consp program) program (string-split program " " 'omit-nulls))
+           :noquery (subp--declared-option :noquery options t)
+           :connection-type (subp--declared-option :connection-type options 'pipe)
+           :stderr errbuff ;;Must be a buffer even if user wants string.
+           ;;@MAYBE: check deadline in here?
+           :filter (unless stdout-buffer-p
+                     (lambda (_ output) (setq stdout (concat stdout output))))))
+         (errproc (get-buffer-process errbuff))
+         (deadline (plist-get options :timeout))
+         (timer (and deadline
+                     ;;@HACK: Register bogus trigger time sotimer does not get
+                     ;;head start on process.
+                     (run-at-time 10 nil
+                                  (lambda () (setq latep t)
+                                    (delete-process process))))))
+    (set-process-sentinel process
+                          (lambda (process _)
+                            ;;@MAYBE: check deadline in here?
+                            (when (memq (process-status process) '(exit failed signal))
+                              (when timer (cancel-timer timer))
+                              (when stdout-buffer-p (setq stdout (process-buffer process)))
+                              (when callback
+                                (funcall callback (if latep (list 'timeout nil nil)
+                                                    ;;@TODO: :stderr 'buffer
+                                                    (list (process-exit-status process) stdout stderr)))))))
+    (set-process-filter errproc (lambda (_ output) (setq stderr (concat stderr output))))
+    (when timer (timer-set-time timer (time-add nil deadline)))
+    process))
+
 (defun subp (program &rest options)
   "Run PROGRAM synchronously with OPTIONS.
 PROGRAM is a string or a list of form (PROGRAM ARGS...).
