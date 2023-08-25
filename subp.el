@@ -111,13 +111,6 @@ Anaphoric bindings provided:
   (declare (indent 1) (debug t))
   `(subp-with-result (subp ,@(if (listp args) args (list args))) ,@body))
 
-(defun subp-output (program &rest args)
-  "Return output of running PROGRAM with ARGS.
-Signal an error if the command returns a nonzero exit code."
-  (subp-with-result (apply #'subp program args)
-    (if success (concat stdout stderr) ; Programs may exit normally and print to stderr
-      (error "%s exited with code %s: %s" program (car result) stderr))))
-
 (defmacro subp-cond (args &rest conditions)
   "Eval CONDITIONS in context of `subp-with' with ARGS."
   (declare (indent 1) (debug t))
