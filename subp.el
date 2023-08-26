@@ -187,17 +187,22 @@ Anaphoric bindings provided:
      (ignore result exit invoked timeout success failure err stdout stderr)
      ,@body))
 
+(defmacro subp--if-async (then else)
+  "Return THEN if ARGS request aysnc subprocess. Otherwise return ELSE."
+  (declare (indent 1))
+  `(let* ((args (if (consp args) args (list args)))
+          (options (cdr-safe args))
+          (callback (plist-get options :callback)))
+     (when callback (warn "subp :callback replaced by macro BODY: %S" callback))
+     (if (or (plist-get options :async) callback)
+         `(subp-async ,(car args) ,,then ,@options)
+       ,else)))
+
 (defmacro subp-with (args &rest body)
   "Execute BODY in `subp-with-result' of calling `subp' with ARGS."
   (declare (indent 1) (debug t))
-  (let* ((args (if (consp args) args (list args)))
-         (options (cdr-safe args))
-         (callback (plist-get options :callback)))
-    (when callback (warn "subp :callback replaced by macro BODY: %S" callback))
-    (if (or (plist-get options :async) callback)
-        `(subp-async ,(car args) (lambda (result) (subp-with-result result ,@body))
-                     ,@options)
-      `(subp-with-result (subp ,@args ,@options) ,@body))))
+  (subp--if-async `(lambda (result) (subp-with-result result ,@body))
+    `(subp-with-result (subp ,@args ,@options) ,@body)))
 
 (defmacro subp-cond (args &rest conditions)
   "Eval CONDITIONS in context of `subp-with' with ARGS."
