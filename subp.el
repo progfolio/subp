@@ -207,7 +207,9 @@ Anaphoric bindings provided:
 (defmacro subp-cond (args &rest conditions)
   "Eval CONDITIONS in context of `subp-with' with ARGS."
   (declare (indent 1) (debug t))
-  `(subp-with ,args (cond ,@conditions)))
+  (subp--if-async
+      `(lambda (result) (subp-with-result result (cond ,@conditions)))
+    `(subp-with ,args (cond ,@conditions))))
 
 (provide 'subp)
 ;;; subp.el ends here
