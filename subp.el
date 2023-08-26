@@ -116,6 +116,7 @@ OPTIONS @TODO: accept options."
                       (and firstp (eq (length optional) limit)))
               (funcall callback
                        (mapcar #'cdr (cl-sort (append required optional) #'< :key #'car)))
+              ;;Ensure limit can't be reached again after this point.
               (setq limit -1 firstp nil)))
           (append (when (consp (car-safe program)) (cdr program))
                   (list :cb-args (list i program))))))
