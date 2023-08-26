@@ -57,9 +57,7 @@
   "Eval CALLBACK  with results of async PROGRAM with OPTIONS."
   (let* ((errbuff (generate-new-buffer " subp-stderr"))
          (stdout-buffer-p (eq (plist-get options :stdout) 'buffer))
-         (stdout nil)
-         (stderr nil)
-         (latep nil)
+         (stdout nil) (stderr nil) (latep nil)
          (process
           (make-process
            :name (subp--declared-option :name options "subp")
