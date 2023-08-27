@@ -43,6 +43,11 @@
 ;;@TODO: gate behind user option
 (add-hook 'kill-emacs-hook #'subp--delete-stderr-file)
 
+(defun subp--ensure-list (object)
+  "Return OBJECT as a list."
+  (declare (side-effect-free error-free))
+  (if (listp object) object (list object)))
+
 (defun subp-resignal (error)
   "Resignal ERROR object."
   (signal (car error) (cdr error)))
