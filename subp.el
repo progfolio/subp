@@ -31,12 +31,12 @@
 (eval-when-compile (require 'subr-x))
 (require 'cl-lib) ;;@MAYBE: implement without using `cl-loop'
 
-(defconst subp--stderr
+(defconst subp--stderr-file
   (expand-file-name (format "subp-stderr-%s" (emacs-pid)) temporary-file-directory)
   "File for storing processes' stderr.")
 
 (defun subp--delete-stderr-file ()
-  "Remove `subp--stderr' file."
+  "Remove `subp--stderr-file'."
   (when (and (boundp 'subp-process--stderr) (file-exists-p subp-process--stderr))
     (delete-file subp-process--stderr)))
 
@@ -56,73 +56,76 @@
   "Return declared OPTION from OPTIONS or DEFAULT."
   (if-let ((declared (plist-member options option))) (cadr declared) default))
 
-(defun subp-async (program callback &rest options)
+(defun subp--normalize-program-args (program)
+  "Return normalized list of  PROGRAM."
+  (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
+    (setq program (pop args))
+    (when (string-match-p "/" program) (setq program (expand-file-name program)))
+    (cons program args)))
+
+(defun subp--process (program options errbuff buffer-p)
+  "Return stopped PROGRAM sub-process with OPTIONS.
+Standard error is associated with ERRBUFF.
+If BUFFER-P is non-nil dedicate a buffer to sub-proccess output."
+  (let ((p (make-process
+            :name (subp--declared-option options :name "subp")
+            :buffer (when buffer-p (generate-new-buffer " subp-stdout"))
+            :command (subp--normalize-program-args program)
+            :noquery (subp--declared-option options :noquery t)
+            :connection-type (subp--declared-option options :connection-type 'pipe)
+            ;;Must be a buffer even if user wants string due to underlying API.
+            :stderr errbuff)))
+    ;;`singal-stop' seemed likes a better choice, but it sends SIGSTP, which can be ignored.
+    ;; SIGSTOP shouldn't be ignored, and sentinel hasn't been isntalled yet.
+    (signal-process p 'SIGSTOP)
+    (process-put p :subp-options options)
+    p))
+
+(defun subp--process-option (process key)
+  "Return KEY's value on PROCESS :subp-options."
+  (plist-get (process-get process :subp-options) key))
+
+(defun subp--concat-filter (key)
+  "Return process filter for process KEY."
+  (lambda (process output)
+    (process-put process key (concat (process-get process key) output))))
+
+(defun subp--async-process-sentinel (callback options errbuff)
+  "Return async process sentinel for CALLBACK with OPTIONS and ERRBUFF."
+  (lambda (process _)
+    (when (and (memq (process-status process) '(exit failed signal)) callback)
+      (apply callback (if (process-get process :latep)
+                          (list 'timeout nil nil)
+                        (list (process-exit-status process)
+                              (if (eq (subp--process-option process :stdout) 'buffer)
+                                  (process-buffer process)
+                                (process-get process :stdout))
+                              (if (eq (subp--process-option process :stderr) 'buffer)
+                                  errbuff
+                                (process-get process :stderr))
+                              (subp--process-option process :props)))
+             (plist-get options :cb-args)))))
+
+(defun subp--timeout-process (process)
+  "Timeout PROCESS."
+  (process-put process :latep t)
+  (kill-process process))
+
+(defun subp--async (program callback &rest options)
   "Eval CALLBACK  with results of async PROGRAM with OPTIONS."
   (let* ((errbuff (generate-new-buffer " subp-stderr"))
          (stdout-buffer-p (eq (plist-get options :stdout) 'buffer))
-         (stdout nil) (stderr nil) (latep nil)
-         (process
-          (make-process
-           :name (subp--declared-option :name options "subp")
-           :buffer (when stdout-buffer-p (generate-new-buffer " subp-stdout"))
-           :command (if (consp program) program (string-split program " " 'omit-nulls))
-           :noquery (subp--declared-option :noquery options t)
-           :connection-type (subp--declared-option :connection-type options 'pipe)
-           :stderr errbuff ;;Must be a buffer even if user wants string.
-           ;;@MAYBE: check deadline in here?
-           :filter (unless stdout-buffer-p
-                     (lambda (_ output) (setq stdout (concat stdout output))))))
-         (errproc (get-buffer-process errbuff))
-         (deadline (plist-get options :timeout))
-         (timer (and deadline
-                     ;;@HACK: Register bogus trigger time sotimer does not get
-                     ;;head start on process.
-                     (run-at-time 10 nil
-                                  (lambda () (setq latep t)
-                                    (delete-process process))))))
-    (set-process-sentinel process
-                          (lambda (process _)
-                            ;;@MAYBE: check deadline in here?
-                            (when (memq (process-status process) '(exit failed signal))
-                              (when timer (cancel-timer timer))
-                              (when stdout-buffer-p (setq stdout (process-buffer process)))
-                              (when callback
-                                (apply callback (if latep (list 'timeout nil nil)
-                                                  ;;@TODO: :stderr 'buffer
-                                                  (list (process-exit-status process) stdout stderr))
-                                       (plist-get options :cb-args))))))
-    (set-process-filter errproc (lambda (_ output) (setq stderr (concat stderr output))))
-    (when timer (timer-set-time timer (time-add nil deadline)))
-    process))
+         (process (subp--process program options errbuff stdout-buffer-p))
+         (errproc (get-buffer-process errbuff)))
+    (unless stdout-buffer-p (set-process-filter process (subp--concat-filter :stdout)))
+    (set-process-sentinel process (subp--async-process-sentinel callback options errbuff))
+    (unless (eq (plist-get options :stderr) 'buffer)
+      (set-process-filter errproc (subp--concat-filter :stderr)))
+    (when-let ((timeout (plist-get options :timeout)))
+      (process-put process :timer
+                   (run-at-time timeout nil #'subp--timeout-process process)))
+    (if (plist-get options :stop) process (continue-process process))))
 
-(defun subp-all (callback programs &rest options)
-  "Eval CALLBACK with result of PROGRAMS.
-OPTIONS @TODO: accept options."
-  (ignore options)
-  (cl-loop
-   with required with optional
-   with progcount = (length programs)
-   with optcount = (cl-count-if
-                    (lambda (program) (plist-get (cdr-safe program) :optional))
-                    programs)
-   with limit = (max (- progcount optcount) 1)
-   with firstp = (= optcount progcount)
-   for program in programs
-   for i below progcount
-   collect
-   (apply #'subp-async (if (consp program) (car program) program)
-          ;;@TODO: kill optional processes when limit reached
-          (lambda (result id self)
-            (push (cons id result)
-                  (if (plist-get (cdr-safe self) :optional) optional required))
-            (when (or (eq (length required) limit)
-                      (and firstp (eq (length optional) limit)))
-              (funcall callback
-                       (mapcar #'cdr (cl-sort (append required optional) #'< :key #'car)))
-              ;;Ensure limit can't be reached again after this point.
-              (setq limit -1 firstp nil)))
-          (append (when (consp (car-safe program)) (cdr program))
-                  (list :cb-args (list i program))))))
 
 (defun subp (program &rest options)
   "Run PROGRAM synchronously with OPTIONS.
