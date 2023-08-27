@@ -273,6 +273,18 @@ Anaphoric bindings provided:
                ,success ,failure ,err ,stdout ,stderr)
        ,@body)))
 
+(defmacro subps-with (spec &rest body)
+  "Eval BODY with namespaced results of async SPEC programs."
+  (declare (indent 1) (debug t))
+  `(subps (list ,@(mapcar #'cadr spec)) ;;@FIX: spec quoting.
+          (lambda (results)
+            (thread-last
+              (progn ,@body)
+              ,@(cl-loop for (sym val) in spec
+                         for i below (length spec)
+                         for namespace =
+                         (if val sym (intern (concat "subp" (number-to-string i))))
+                         collect `(subp-with-result ,namespace (nth ,i results)))))))
 
 (defmacro subp-with (args &rest body)
   "Execute BODY in `subp-with-result' of calling `subp' with ARGS."
