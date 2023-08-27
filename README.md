@@ -19,14 +19,23 @@ Run `PROGRAM` synchronously with `OPTIONS`. `PROGRAM` is a string or a list of f
 
 -   stdout: \`buffer\` to return a buffer, other values return a string.
 -   stderr: same as above.
--   stdin: File path for program input.
+-   stdin: File path for program input. @=TODO=: region/buffer as stdin.
+-   lisp-error: If non-nil, signal Lisp errors, else return Lisp error object.
+-   namespace: A symbol or string prefixed for anaphoric \`subp-with' bindings.
 
-Return a list of form: (`EXITCODE` `STDOUT` `STDERR`).
+The following keywords apply to asynchronous sub processes:
+
+-   async: When non-nil, execute `PROGRAM` asynchronously.
+-   callback: A function called with at least one arg. Implies :async t.
+-   cb-args: Additional args to pass to the :callback function
+-   stop: When non-nil, return a stopped process object.
+
+Return a list of form (`EXIT` `STDOUT` `STDERR` :=PROPS=&#x2026;) for synchrous processses. Return a process object for asynchronous processes.
 
 ```emacs-lisp
 (subp "date")
 
-;; (0 "Wed Aug 23 09:24:43 PM EDT 2023
+;; (0 "Sun Aug 27 07:20:10 PM EDT 2023
 ;; " nil)
 
 ```
@@ -34,7 +43,7 @@ Return a list of form: (`EXITCODE` `STDOUT` `STDERR`).
 ```emacs-lisp
 (subp "date -R")
 
-;; (0 "Wed, 23 Aug 2023 21:24:43 -0400
+;; (0 "Sun, 27 Aug 2023 19:20:10 -0400
 ;; " nil)
 
 ```
@@ -48,6 +57,21 @@ Return a list of form: (`EXITCODE` `STDOUT` `STDERR`).
 
 ```
 
+```emacs-lisp
+(subp '("bash" "-c" "sleep 2; date"))
+
+;; (0 "Sun Aug 27 07:20:12 PM EDT 2023
+;; " nil)
+
+```
+
+```emacs-lisp
+(subp '("bash" "-c" "sleep 2; date") :callback #'identity)
+
+;; #<process subp>
+
+```
+
 
 ## subp-with
 
@@ -58,7 +82,7 @@ Execute `BODY` in \`subp-with-result' of calling \`subp' with `ARGS`.
 ```emacs-lisp
 (subp-with "date" stdout)
 
-;; "Wed Aug 23 09:24:43 PM EDT 2023
+;; "Sun Aug 27 07:20:12 PM EDT 2023
 ;; "
 
 ```
@@ -89,7 +113,7 @@ Eval `CONDITIONS` in context of \`subp-with' with `ARGS`.
 ```emacs-lisp
 (subp-cond "date" (success stdout) (failure stderr))
 
-;; "Wed Aug 23 09:24:43 PM EDT 2023
+;; "Sun Aug 27 07:20:12 PM EDT 2023
 ;; "
 
 ```
