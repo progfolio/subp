@@ -47,11 +47,9 @@
   "Resignal ERROR object."
   (signal (car error) (cdr error)))
 
-(defsubst subp--declared-option (option options &optional default)
+(defun subp--declared-option (options option &optional default)
   "Return declared OPTION from OPTIONS or DEFAULT."
-  (if-let ((declared (plist-get option options)))
-      (cadr declared)
-    default))
+  (if-let ((declared (plist-member options option))) (cadr declared) default))
 
 (defun subp-async (program callback &rest options)
   "Eval CALLBACK  with results of async PROGRAM with OPTIONS."
