@@ -245,8 +245,7 @@ Anaphoric bindings provided:
   stdout: output of stdout
   stderr: output of stderr"
   (declare (indent 1) (debug t))
-  (let* ((ns (or (and namespace (if (stringp namespace) namespace (symbol-name namespace)))
-                 (subp-result-props-get result :namespace)))
+  (let* ((ns (or (and namespace (if (stringp namespace) namespace (symbol-name namespace)))))
          (rsym     (subp--namespace-symbol ns "result"))
          (exit     (subp--namespace-symbol ns "exit"))
          (timeout  (subp--namespace-symbol ns "timeout"))
