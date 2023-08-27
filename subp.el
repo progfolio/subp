@@ -126,6 +126,27 @@ If BUFFER-P is non-nil dedicate a buffer to sub-proccess output."
                    (run-at-time timeout nil #'subp--timeout-process process)))
     (if (plist-get options :stop) process (continue-process process))))
 
+(defun subp--validate-args (program options)
+  "Validate PROGRAM and OPTIONS."
+  (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
+  (when options (unless (keywordp (car options))
+                  (signal 'wrong-type-argument (list (car options) 'keywordp)))))
+
+(defun subp--stdout (bufferp)
+  "Return stdout string. If BUFFERP is non-nil return `current-buffer'."
+  (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
+        (bufferp (current-buffer))
+        (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
+             (kill-buffer)))))
+
+(defun subp--stderr (bufferp)
+  "Return `subp--stderr-file' stdout string. If BUFFERP is non-nil return buffer."
+  (unless (= (file-attribute-size (file-attributes subp--stderr-file)) 0)
+    (with-current-buffer (generate-new-buffer " subp-stderr")
+      (insert-file-contents subp--stderr-file)
+      (if bufferp (current-buffer)
+        (prog1 (buffer-substring-no-properties (point-min) (point-max))
+          (kill-buffer))))))
 
 (defun subp (program &rest options)
   "Run PROGRAM synchronously with OPTIONS.
@@ -134,39 +155,82 @@ If PROGRAM contains spaces, it will be split on spaces to supply program args.
 OPTIONS is a may be any of the key value pairs:
   - stdout: `buffer` to return a buffer, other values return a string.
   - stderr: same as above.
-  - stdin: File path for program input.
+  - stdin: File path for program input. @TODO: region/buffer as stdin.
   - lisp-error: If non-nil, signal Lisp errors, else return Lisp error object.
-Return a list of form: (EXITCODE STDOUT STDERR)."
+  - namespace: A symbol or string prefixed for anaphoric `subp-with' bindings.
+
+The following keywords apply to asynchronous sub processes:
+
+  - async: When non-nil, execute PROGRAM asynchronously.
+  - callback: A function called with at least one arg. Implies :async t.
+  - cb-args: Additional args to pass to the :callback function
+  - stop: When non-nil, return a stopped process object.
+Return a list of form (EXIT STDOUT STDERR :PROPS...) for synchrous processses.
+Return a process object for asynchronous processes."
   (condition-case err
-      (progn
-        (or program (signal 'wrong-type-argument '(nil (stringp (stringp...)))))
-        (when options (unless (keywordp (car options))
-                        (signal 'wrong-type-argument (list (car options) 'keywordp))))
-        (let ((callback (plist-get options :callback)))
-          (if (or callback (plist-get options :async))
-              ;;@TODO: lisp-error treatment when async?
-              (apply #'subp-async program callback options)
-            (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
-              (setq program (pop args))
-              (when (string-match-p "/" program) (setq program (expand-file-name program)))
-              (with-current-buffer (generate-new-buffer " subp-stdout")
-                (list (apply #'call-process program (plist-get options :stdin)
-                             (list t subp--stderr) nil args)
-                      (cond ((= (buffer-size) 0) (and (kill-buffer) nil))
-                            ((eq (plist-get options :stdout) 'buffer) (current-buffer))
-                            (t (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                                 (kill-buffer))))
-                      (unless (= (file-attribute-size (file-attributes subp--stderr)) 0)
-                        (with-current-buffer (generate-new-buffer " subp-stderr")
-                          (insert-file-contents subp--stderr)
-                          (if (eq (plist-get options :stderr) 'buffer)
-                              (current-buffer)
-                            (prog1 (buffer-substring-no-properties (point-min) (point-max))
-                              (kill-buffer)))))))))))
-    (error (if (plist-get options :lisp-error) (signal (car err) (cdr err)) err))))
+      (let ((callback (plist-get options :callback)))
+        (subp--validate-args program options)
+        (if (or callback (plist-get options :async))
+            (apply #'subp--async program callback options)
+          (let* ((normalized (subp--normalize-program-args program))
+                 (program (car normalized))
+                 (args (cdr normalized)))
+            (with-current-buffer (generate-new-buffer " subp-stdout")
+              (append (list (apply #'call-process program (plist-get options :stdin)
+                                   (list t subp--stderr-file) nil args)
+                            (subp--stdout (eq (plist-get options :stdout) 'buffer))
+                            (subp--stderr (eq (plist-get options :stderr) 'buffer)))
+                      (subp--ensure-list  (plist-get options :props)))))))
+    (error (if (plist-get options :lisp-error) (subp-resignal err) err))))
+
+(defun subps (programs callback &rest options)
+  "Eval CALLBACK with result of async PROGRAMS.
+Return list of PROGRAMS subprocesses.
+OPTIONS @TODO: accept options."
+  (cl-loop
+   with required with optional
+   with progcount = (length programs)
+   with optcount = (cl-count-if (lambda (program) (plist-get (cdr-safe program) :optional))
+                                programs)
+   with limit = (max (- progcount optcount) 1)
+   with firstp = (= optcount progcount)
+   for program in programs
+   for i below progcount
+   for p =
+   (apply #'subp (if (consp program) (car program) program)
+          ;;@TODO: kill optional processes when limit reached
+          (append
+           (when (consp (car-safe program)) (cdr program))
+           (list :callback
+                 (lambda (result id self)
+                   (push (cons id result)
+                         (if (plist-get (cdr-safe self) :optional) optional required))
+                   (when (or (eq (length required) limit)
+                             (and firstp (eq (length optional) limit)))
+                     (apply callback
+                            (cl-loop with results = (append required optional)
+                                     for i below (length programs)
+                                     collect (alist-get i results '(declined nil nil)))
+                            (plist-get options :cb-args))
+                     ;;Ensure limit can't be reached after this point.
+                     (setq limit -1 firstp nil)))
+                 :stop t
+                 :cb-args (list i program))))
+   when (listp p) do ;;handle lisp-errors immediately returned result
+   (push (cons i p) (if (plist-get (cdr-safe program) :optional) optional required))
+   collect (if (processp p) (continue-process p) p)))
+
 (defsubst subp--namespace-symbol (prefix name)
   "Reutrn symbol NAME with PREFIX."
   (intern (if (not prefix) name (concat prefix "-" name)))) ;;@MAYBE: Drop hyphen?
+
+(defun subp-result-props (result)
+  "Return props of RESULT."
+  (nthcdr 3 result))
+
+(defun subp-result-props-get (result key)
+  "Return KEY's value from RESULT props."
+  (plist-get (subp-result-props result) key))
 
 (defmacro subp-with-result (namespace result &rest body)
   "Provide anaphoric RESULT bindings with NAMESPACE for duration of BODY.
