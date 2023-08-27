@@ -158,11 +158,13 @@ Return a list of form: (EXITCODE STDOUT STDERR)."
                             (prog1 (buffer-substring-no-properties (point-min) (point-max))
                               (kill-buffer)))))))))))
     (error (if (plist-get options :lisp-error) (signal (car err) (cdr err)) err))))
+(defsubst subp--namespace-symbol (prefix name)
+  "Reutrn symbol NAME with PREFIX."
+  (intern (if (not prefix) name (concat prefix "-" name)))) ;;@MAYBE: Drop hyphen?
 
-(defmacro subp-with-result (result &rest body)
-  "Provide anaphoric RESULT bindings for duration of BODY.
-RESULT must be an expression which evaluates to a list of form:
-  (EXITCODE STDOUT STDERR)
+(defmacro subp-with-result (namespace result &rest body)
+  "Provide anaphoric RESULT bindings with NAMESPACE for duration of BODY.
+RESULT must be an expression which evaluates to subp result.
 Anaphoric bindings provided:
   result: the raw process result list
   exit: the exit code of the process
@@ -173,18 +175,33 @@ Anaphoric bindings provided:
   stdout: output of stdout
   stderr: output of stderr"
   (declare (indent 1) (debug t))
-  `(let* ((result ,result)
-          (exit    (car result))
-          (timeout (eq exit 'timeout))
-          (invoked (or timeout (numberp exit)))
-          (success (and (not timeout) invoked (zerop exit)))
-          (failure (not success))
-          (err     (and (not invoked) result))
-          (stdout  (and invoked (nth 1 result)))
-          (stderr  (and invoked (nth 2 result))))
-     ;; Prevent byte-compiler warnings.
-     (ignore result exit invoked timeout success failure err stdout stderr)
-     ,@body))
+  (let* ((ns (or (and namespace (if (stringp namespace) namespace (symbol-name namespace)))
+                 (subp-result-props-get result :namespace)))
+         (rsym     (subp--namespace-symbol ns "result"))
+         (exit     (subp--namespace-symbol ns "exit"))
+         (timeout  (subp--namespace-symbol ns "timeout"))
+         (declined (subp--namespace-symbol ns "declined"))
+         (invoked  (subp--namespace-symbol ns "invoked"))
+         (success  (subp--namespace-symbol ns "success"))
+         (failure  (subp--namespace-symbol ns "failure"))
+         (err      (subp--namespace-symbol ns "err"))
+         (stdout   (subp--namespace-symbol ns "stdout"))
+         (stderr   (subp--namespace-symbol ns "stderr")))
+    ;;@TODO: simplify bindings. Failure could be non-nil and capture reason.
+    `(let* ((,rsym     ,result)
+            (,exit     (car ,rsym))
+            (,timeout  (eq ,exit 'timeout))
+            (,declined (eq ,exit 'timeout))
+            (,invoked  (or ,timeout ,declined (numberp ,exit)))
+            (,success  (and (not (or ,timeout ,declined)) ,invoked (zerop ,exit)))
+            (,failure  (and (not ,success) ,exit))
+            (,err      (and (not (or ,timeout ,declined ,invoked)) ,rsym))
+            (,stdout   (and ,invoked (nth 1 ,rsym)))
+            (,stderr   (and ,invoked (nth 2 ,rsym))))
+       ;; Prevent byte-compiler warnings.
+       (ignore ,rsym ,exit ,timeout ,declined ,invoked
+               ,success ,failure ,err ,stdout ,stderr)
+       ,@body)))
 
 (defmacro subp--if-async (then else)
   "Return THEN if ARGS request aysnc subprocess. Otherwise return ELSE."
