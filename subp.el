@@ -43,7 +43,7 @@
 ;;@TODO: gate behind user option
 (add-hook 'kill-emacs-hook #'subp--delete-stderr-file)
 
-(defsubst subp-resignal (error)
+(defun subp-resignal (error)
   "Resignal ERROR object."
   (signal (car error) (cdr error)))
 
