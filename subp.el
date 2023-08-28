@@ -198,7 +198,6 @@ OPTIONS @TODO: accept options."
    for i below progcount
    for p =
    (apply #'subp (if (consp program) (car program) program)
-          ;;@TODO: kill optional processes when limit reached
           (append
            (when (consp (car-safe program)) (cdr program))
            (list :callback
@@ -207,6 +206,7 @@ OPTIONS @TODO: accept options."
                          (if (plist-get (cdr-safe self) :optional) optional required))
                    (when (or (eq (length required) limit)
                              (and firstp (eq (length optional) limit)))
+                     ;;@TODO: kill outstanding processes
                      (apply callback
                             (cl-loop with results = (append required optional)
                                      for i below (length programs)
