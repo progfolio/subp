@@ -244,7 +244,7 @@ Anaphoric bindings provided:
   err: Lisp error object
   stdout: output of stdout
   stderr: output of stderr"
-  (declare (indent 1) (debug t))
+  (declare (indent 2) (debug t))
   (let* ((ns (or (and namespace (if (stringp namespace) namespace (symbol-name namespace)))))
          (rsym     (subp--namespace-symbol ns "result"))
          (exit     (subp--namespace-symbol ns "exit"))
@@ -295,7 +295,7 @@ Anaphoric bindings provided:
     (if (or (plist-get options :async) callback)
         `(subp--async ,(car args)
                       (lambda (result) (subp-with-result ,(plist-get options :namespace)
-                                         result ,@body))
+                                           result ,@body))
                       ,@options)
       `(subp-with-result ,(plist-get options :namespace) (subp ,@args) ,@body))))
 
