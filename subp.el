@@ -59,9 +59,8 @@
 (defun subp--normalize-program-args (program)
   "Return normalized list of  PROGRAM."
   (let ((args (if (consp program) program (split-string program " " 'omit-nulls))))
-    (setq program (pop args))
-    (when (string-match-p "/" program) (setq program (expand-file-name program)))
-    (cons program args)))
+    (when (string-match-p "/" (car args)) (setf (car args) (expand-file-name (car args))))
+    args))
 
 (defun subp--process (program options errbuff buffer-p)
   "Return stopped PROGRAM sub-process with OPTIONS.
