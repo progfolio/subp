@@ -93,16 +93,16 @@ If BUFFER-P is non-nil dedicate a buffer to sub-proccess output."
   "Return async process sentinel for CALLBACK with OPTIONS and ERRBUFF."
   (lambda (process _)
     (when (and (memq (process-status process) '(exit failed signal)) callback)
-      (apply callback (if (process-get process :latep)
-                          (list 'timeout nil nil)
-                        (list (process-exit-status process)
-                              (if (eq (subp--process-option process :stdout) 'buffer)
-                                  (process-buffer process)
-                                (process-get process :stdout))
-                              (if (eq (subp--process-option process :stderr) 'buffer)
-                                  errbuff
-                                (process-get process :stderr))
-                              (subp--process-option process :props)))
+      (apply callback (append (if (process-get process :latep)
+                                  (list 'timeout nil nil)
+                                (list (process-exit-status process)
+                                      (if (eq (subp--process-option process :stdout) 'buffer)
+                                          (process-buffer process)
+                                        (process-get process :stdout))
+                                      (if (eq (subp--process-option process :stderr) 'buffer)
+                                          errbuff
+                                        (process-get process :stderr))))
+                                (subp--process-option process :props))
              (plist-get options :cb-args)))))
 
 (defun subp--timeout-process (process)
