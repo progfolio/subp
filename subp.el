@@ -254,7 +254,8 @@ Anaphoric bindings provided:
          (failure  (subp--namespace-symbol ns "failure"))
          (err      (subp--namespace-symbol ns "err"))
          (stdout   (subp--namespace-symbol ns "stdout"))
-         (stderr   (subp--namespace-symbol ns "stderr")))
+         (stderr   (subp--namespace-symbol ns "stderr"))
+         (props    (subp--namespace-symbol ns "props")))
     ;;@TODO: simplify bindings. Failure could be non-nil and capture reason.
     `(let* ((,rsym     ,result)
             (,exit     (car ,rsym))
@@ -265,10 +266,11 @@ Anaphoric bindings provided:
             (,failure  (and (not ,success) ,exit))
             (,err      (and (not (or ,timeout ,declined ,invoked)) ,rsym))
             (,stdout   (and ,invoked (nth 1 ,rsym)))
-            (,stderr   (and ,invoked (nth 2 ,rsym))))
+            (,stderr   (and ,invoked (nth 2 ,rsym)))
+            (,props    (subp-result-props ,result)))
        ;; Prevent byte-compiler warnings.
        (ignore ,rsym ,exit ,timeout ,declined ,invoked
-               ,success ,failure ,err ,stdout ,stderr)
+               ,success ,failure ,err ,stdout ,stderr ,props)
        ,@body)))
 
 (defmacro subps-with (spec &rest body)
