@@ -288,7 +288,7 @@ Anaphoric bindings provided:
 
 (defmacro subp-with (args &rest body)
   "Execute BODY in `subp-with-result' of calling `subp' with ARGS."
-  (declare (indent 1) (debug t))
+  (declare (indent 1) (debug t)) ;;@FIX: wrong debug declaration?
   (let* ((args (if (consp args) args (list args)))
          (options (cdr-safe args))
          (callback (plist-get options :callback)))
