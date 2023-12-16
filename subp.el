@@ -213,9 +213,9 @@ OPTIONS @TODO: accept options."
                             (plist-get options :cb-args))
                      ;;Ensure limit can't be reached after this point.
                      (setq limit -1 firstp nil)))
-                 :stop t
+                 :stop t ;Prevent process from getting head start while others are created.
                  :cb-args (list i program))))
-   when (listp p) do ;;handle lisp-errors immediately returned result
+   when (listp p) do ;Handle lisp errors immediately in returned result
    (push (cons i p) (if (plist-get (cdr-safe program) :optional) optional required))
    collect (if (processp p) (continue-process p) p)))
 
