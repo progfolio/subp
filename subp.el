@@ -148,7 +148,7 @@ If BUFFER-P is non-nil dedicate a buffer to sub-proccess output."
           (kill-buffer))))))
 
 (defun subp (program &rest options)
-  "Run PROGRAM synchronously with OPTIONS.
+  "Run PROGRAM with OPTIONS.
 PROGRAM is a string or a list of form (PROGRAM ARGS...).
 If PROGRAM contains spaces, it will be split on spaces to supply program args.
 OPTIONS is a may be any of the key value pairs:
@@ -164,7 +164,7 @@ The following keywords apply to asynchronous sub processes:
   - callback: A function called with at least one arg. Implies :async t.
   - cb-args: Additional args to pass to the :callback function
   - stop: When non-nil, return a stopped process object.
-Return a list of form (EXIT STDOUT STDERR :PROPS...) for synchrous processses.
+Return a list of form (EXITCODE STDOUT STDERR PROPS) for synchronous processses.
 Return a process object for asynchronous processes."
   (condition-case err
       (let ((callback (plist-get options :callback)))
