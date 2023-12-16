@@ -102,7 +102,7 @@ If BUFFER-P is non-nil dedicate a buffer to sub-proccess output."
                                       (if (eq (subp--process-option process :stderr) 'buffer)
                                           errbuff
                                         (process-get process :stderr))))
-                                (subp--process-option process :props))
+                              (subp--process-option process :props))
              (plist-get options :cb-args)))))
 
 (defun subp--timeout-process (process)
@@ -187,7 +187,7 @@ Return a process object for asynchronous processes."
 Return list of PROGRAMS subprocesses.
 OPTIONS @TODO: accept options."
   (cl-loop
-   with required with optional
+   with (required optional)
    with progcount = (length programs)
    with optcount = (cl-count-if (lambda (program) (plist-get (cdr-safe program) :optional))
                                 programs)
