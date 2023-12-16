@@ -221,7 +221,7 @@ OPTIONS @TODO: accept options."
 
 (defsubst subp--namespace-symbol (prefix name)
   "Reutrn symbol NAME with PREFIX."
-  (intern (if (not prefix) name (concat prefix "-" name)))) ;;@MAYBE: Drop hyphen?
+  (intern (if (not prefix) name (concat prefix name))))
 
 (defun subp-result-props (result)
   "Return props of RESULT."
