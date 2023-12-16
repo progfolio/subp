@@ -196,9 +196,11 @@ OPTIONS @TODO: accept options."
    for program in programs
    for i below progcount
    for p =
-   (apply #'subp (if (consp program) (car program) program)
+   (apply #'subp
           (append
-           (when (consp (car-safe program)) (cdr program))
+           (cond ((consp (car-safe program)) program) ;((program with spaces) args...)
+                 ((consp program) (list (car program))) ;(pogram args...)
+                 (t (list program))) ; program
            (list :callback
                  (lambda (result id self)
                    (push (cons id result)
@@ -289,16 +291,19 @@ Anaphoric bindings provided:
 (defmacro subp-with (args &rest body)
   "Execute BODY in `subp-with-result' of calling `subp' with ARGS."
   (declare (indent 1) (debug t)) ;;@FIX: wrong debug declaration?
-  (let* ((args (if (consp args) args (list args)))
+  (let* ((args (if (or (consp (car-safe args)) (listp args)) args (list args)))
          (options (cdr-safe args))
          (callback (plist-get options :callback)))
     (when callback (warn "subp :callback replaced by macro BODY: %S" callback))
     (if (or (plist-get options :async) callback)
         `(subp--async ,(car args)
                       (lambda (result) (subp-with-result ,(plist-get options :namespace)
-                                           result ,@body))
+                                                         result ,@body))
                       ,@options)
-      `(subp-with-result ,(plist-get options :namespace) (subp ,@args) ,@body))))
+      `(subp-with-result ,(plist-get options :namespace)
+                         ,@(if (consp (car-safe args)) `((subp ',(car args) ,@(cdr args)))
+                             `((subp ,@args)))
+                         ,@body))))
 
 (defmacro subp-cond (args &rest conditions)
   "Eval CONDITIONS in context of `subp-with' with ARGS."
